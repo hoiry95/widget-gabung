@@ -1,0 +1,103 @@
+(function(){
+  "use strict";
+
+  // ==== Inject Font & CSS (Roboto + styling widget) ====
+  var css = `
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --font:'Roboto',system-ui,-apple-system,Segoe UI,Arial,sans-serif;
+      --title-lg:22px; --title-sm:14px; --meta:12px;
+      --gap:14px; --radius:14px;
+      --red:#d80f0f; --muted:#6b7280;
+      --tb-blue:#16a34a;
+      --nav-height:44px;
+      --nav-pad-x:12px;
+      --nav-font-size:16px;
+      --nav-font-weight:800;
+      --nav-letter-spacing:.2px;
+      --nav-text-transform:uppercase;
+      --nav-line-height:1.1;
+    }
+    .tb-wrap{font-family:var(--font); color:#111; max-width:760px; margin:0 auto; -webkit-font-smoothing:antialiased; letter-spacing:.1px}
+    .tb-wrap a{color:inherit; text-decoration:none}
+    .tb-head{display:flex;justify-content:center;align-items:center;background:#16a34a!important;color:#fff!important;min-height:var(--nav-height);padding:0 var(--nav-pad-x);margin:0 0 10px;box-shadow:0 6px 14px rgba(0,0,0,.15)}
+    .tb-head.full-bleed{width:100vw;margin-left:calc(50% - 50vw)}
+    .tb-head .labels{font-weight:var(--nav-font-weight);text-transform:var(--nav-text-transform);letter-spacing:var(--nav-letter-spacing);font-size:var(--nav-font-size);line-height:var(--nav-line-height);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .tb-img{width:100%;aspect-ratio:16/9;border-radius:var(--radius);overflow:hidden;background:#f2f2f2}
+    .tb-img img{width:100%;height:100%;object-fit:cover;display:block}
+    .tb-hero{margin-bottom:calc(var(--gap)*1.2)}
+    .tb-hero h1{font-size:var(--title-lg);font-weight:600;line-height:1.2;margin:10px 0 6px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+    .tb-meta{font-size:var(--meta);display:flex;align-items:center;gap:6px}
+    .tb-meta .cat{color:var(--red);font-weight:700}
+    .tb-meta .time{color:var(--muted);margin-left:auto}
+    .tb-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap)}
+    .tb-card h3{font-size:var(--title-sm);font-weight:500;line-height:1.2;margin:8px 0 6px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  </style>`;
+  document.head.insertAdjacentHTML("beforeend", css);
+
+  // === Helper untuk baca navigasi ===
+  function pickNav(){
+    var sels=['.nav','.navigation','#nav','#navigation','.menu','.menu-wrap','.main-menu','header .nav','header .navigation','header .menu','.topnav','#topnav'];
+    for(var s of sels){var el=document.querySelector(s);if(el&&el.offsetHeight>0)return el;}
+    return null;
+  }
+
+  function syncBacronToNav(){
+    var nav=pickNav(),root=document.documentElement,head=document.querySelector('.tb-head');
+    if(!head)return;
+    if(nav){
+      var cs=getComputedStyle(nav),rect=nav.getBoundingClientRect();
+      root.style.setProperty('--nav-height',Math.max(Math.round(rect.height),36)+'px');
+      root.style.setProperty('--nav-pad-x',((parseFloat(cs.paddingLeft)||12)+(parseFloat(cs.paddingRight)||12))/2+'px');
+      root.style.setProperty('--nav-font-size',cs.fontSize||'16px');
+      root.style.setProperty('--nav-font-weight',cs.fontWeight||'800');
+      root.style.setProperty('--nav-letter-spacing',cs.letterSpacing||'.2px');
+      root.style.setProperty('--nav-text-transform',cs.textTransform||'uppercase');
+      root.style.setProperty('--nav-line-height',cs.lineHeight&&cs.lineHeight!=='normal'?cs.lineHeight:'1.1');
+      head.classList.toggle('full-bleed',Math.abs(rect.left)<2&&Math.abs(window.innerWidth-rect.right)<2);
+    } else {root.style.setProperty('--nav-height','44px');root.style.setProperty('--nav-pad-x','12px');head.classList.remove('full-bleed');}
+  }
+
+  function tdate(iso){return iso?new Date(iso):new Date(0);}
+  function timeAgo(iso){
+    var d=new Date(iso),s=Math.floor((Date.now()-d)/1000),units=[['tahun',31536000],['bulan',2592000],['minggu',604800],['hari',86400],['jam',3600],['menit',60]];
+    for(var u of units){var v=Math.floor(s/u[1]);if(v>=1)return v+' '+u[0]+' yang lalu';}
+    return 'baru saja';
+  }
+
+  function init(){
+    var SITE='https://www.satusuara.or.id',LABELS=['PERISTIWA','DAERAH','SOSIAL'],SECTION_TITLE='𝐁𝐄𝐑𝐈𝐓𝐀 𝐔𝐏𝐃𝐀𝐓𝐄 𝐓𝐄𝐑𝐊𝐈𝐍𝐈',MAX_TOTAL=9,TARGET_ID='tb-gabung',collected=[],done=0,wrap=document.getElementById(TARGET_ID);
+    if(!wrap)return;
+    function fixSize(u){try{return u.replace(/\/s\d{2,4}(-c)?\//,'/s1600/');}catch(e){return u;}}
+    function getThumb(e){try{if(e['media$thumbnail']?.url)return fixSize(e['media$thumbnail'].url);var h=(e.content?.$t)||(e.summary?.$t)||'',m=h.match(/<img[^>]+src=["']([^"']+)["']/i);if(m)return fixSize(m[1]);}catch(e){}return'https://dummyimage.com/1200x675/e5e7eb/9ca3af.png&text=Berita';}
+    function getLink(e){var l=e.link?.find(x=>x.rel==='alternate');return l?l.href:'#';}
+    function handleFeed(label,json){
+      if(json?.feed?.entry)json.feed.entry.forEach(e=>collected.push({title:e.title?.$t||'(Tanpa judul)',link:getLink(e),img:getThumb(e),date:e.published?.$t||e.updated?.$t||'',label}));
+      done++;if(done===LABELS.length)renderAll();
+    }
+    function renderAll(){
+      var uniq=[],seen=new Set();
+      collected.sort((a,b)=>tdate(b.date)-tdate(a.date)).forEach(it=>{if(!seen.has(it.link)){seen.add(it.link);uniq.push(it);}});
+      var headHTML=`<div class="tb-head"><div class="labels">${SECTION_TITLE}</div></div>`;
+      if(uniq.length===0){wrap.innerHTML=headHTML+'<p style="padding:14px">Data tidak ditemukan.</p>';syncBacronToNav();return;}
+      var posts=uniq.slice(0,MAX_TOTAL),hero=posts[0];
+      var heroHTML=`<article class="tb-hero"><a href="${hero.link}"><div class="tb-img"><img loading="lazy" src="${hero.img}"></div><h1>${hero.title}</h1></a><div class="tb-meta"><span class="cat">${hero.label}</span><span class="time">${timeAgo(hero.date)}</span></div></article>`;
+      var grid=posts.slice(1).map(p=>`<article class="tb-card"><a href="${p.link}"><div class="tb-img"><img loading="lazy" src="${p.img}"></div><h3>${p.title}</h3></a><div class="tb-meta"><span class="cat">${p.label}</span><span class="time">${timeAgo(p.date)}</span></div></article>`).join('');
+      wrap.innerHTML=headHTML+heroHTML+`<section class="tb-grid">${grid}</section>`;
+      syncBacronToNav();
+    }
+    LABELS.forEach((label,i)=>{
+      var cb=`__tbCB_${Date.now()}_${Math.random().toString(36).slice(2)}_${i}`;
+      window[cb]=json=>{try{handleFeed(label,json);}finally{delete window[cb];}};
+      var s=document.createElement('script');
+      s.src=`${SITE}/feeds/posts/summary/-/${encodeURIComponent(label)}?alt=json-in-script&max-results=10&callback=${cb}`;
+      s.onerror=function(){done++;if(done===LABELS.length)renderAll();};
+      document.body.appendChild(s);
+    });
+    window.addEventListener('resize',()=>setTimeout(syncBacronToNav,100));
+    setTimeout(syncBacronToNav,1000);
+  }
+
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init);}else{init();}
+})();
